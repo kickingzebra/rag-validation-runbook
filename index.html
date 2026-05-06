@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG Validation Dashboard — CD-Rulebook Workspace</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <!--
+    PORTABILITY NOTE — designed for clean merge into kickingzebra/LLM-Model-Dashboard later.
+
+    Each visual unit below maps 1:1 to a future React component:
+      .dashboard-header     → <DashboardHeader meta />
+      .layer-status-strip   → <LayerStatusStrip layers />
+      .pipeline-diagram     → <PipelineDiagram source />
+      .layer-scorecard      → <LayerScorecard layers />
+      .layer-card           → <LayerCard {...layer} />
+      .query-results-grid   → <QueryResults queries />
+      .query-card           → <QueryCard {...query} />
+      .chunking-fix-story   → <ChunkingFixStory before after punchline />
+      .latency-section      → <LatencyDecomposition rows note />
+      .triage-section       → <TriageFlowchart source />
+      .dashboard-footer     → <DashboardFooter meta />
+
+    All page data lives in the DASHBOARD_DATA constant in the <script> block.
+    To port: extract DASHBOARD_DATA to a typed module, replace each render*()
+    helper with the matching React component, keep the CSS custom properties
+    so the dashboard's theme can override colours via a parent provider.
+
+    No backend dependencies. No live probes. Static data, hand-edited as
+    new validation runs land. See README.md and docs/ for the source.
+  -->
+  <style>
+    /*
+      THEME VARIABLES — override these from a parent theme to match the
+      LLM-Model-Dashboard's palette without touching the rest of this CSS.
+    */
+    :root {
+      --bg: #0a0e14;
+      --bg-card: #161b22;
+      --bg-card-hover: #1c2128;
+      --bg-inset: #0d1117;
+      --border: #30363d;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent-green: #3fb950;
+      --accent-red: #f85149;
+      --accent-yellow: #d29922;
+      --accent-blue: #58a6ff;
+      --accent-purple: #a371f7;
+      --layer-1: #facc15;
+      --layer-2: #60a5fa;
+      --layer-3: #4ade80;
+      --layer-4: #f472b6;
+      --shadow: 0 1px 3px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.2);
+      --radius: 8px;
+      --radius-sm: 4px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px 80px;
+    }
+
+    code {
+      background: var(--bg-inset);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.92em;
+      color: var(--text-primary);
+    }
+
+    /* ===== DashboardHeader ===== */
+    .dashboard-header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+    }
+    .dashboard-header h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .dashboard-header__subtitle {
+      color: var(--text-secondary);
+      font-size: 15px;
+      margin: 0 0 16px;
+    }
+    .dashboard-header__meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .dashboard-header__meta a {
+      color: var(--accent-blue);
+      text-decoration: none;
+    }
+    .dashboard-header__meta a:hover { text-decoration: underline; }
+
+    /* ===== Section shell ===== */
+    section { margin-bottom: 48px; }
+    section h2 {
+      font-size: 20px;
+      font-weight: 600;
+      margin: 0 0 4px;
+      letter-spacing: -0.01em;
+    }
+    .section-lede {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin: 0 0 20px;
+    }
+
+    /* ===== LayerStatusStrip ===== */
+    .layer-status-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0 24px;
+    }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 12px;
+      background: rgba(63, 185, 80, 0.12);
+      border: 1px solid rgba(63, 185, 80, 0.4);
+      color: var(--accent-green);
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .status-chip--fail {
+      background: rgba(248, 81, 73, 0.12);
+      border-color: rgba(248, 81, 73, 0.4);
+      color: var(--accent-red);
+    }
+    .status-chip--warn {
+      background: rgba(210, 153, 34, 0.12);
+      border-color: rgba(210, 153, 34, 0.4);
+      color: var(--accent-yellow);
+    }
+    .status-chip__dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ===== Card primitive (used by LayerCard, QueryCard, ChunkingFix panels) ===== */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      transition: background 0.15s ease;
+    }
+    .card:hover { background: var(--bg-card-hover); }
+
+    .card__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .card__title {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0;
+    }
+    .card__title-tag {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    .card__title-tag--l1 { background: var(--layer-1); }
+    .card__title-tag--l2 { background: var(--layer-2); }
+    .card__title-tag--l3 { background: var(--layer-3); }
+    .card__title-tag--l4 { background: var(--layer-4); }
+
+    .verdict {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .verdict--pass { background: rgba(63, 185, 80, 0.15); color: var(--accent-green); }
+    .verdict--fail { background: rgba(248, 81, 73, 0.15); color: var(--accent-red); }
+    .verdict--partial { background: rgba(210, 153, 34, 0.15); color: var(--accent-yellow); }
+
+    .card__metrics {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin: 10px 0 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .card__metrics strong {
+      color: var(--text-primary);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .card__finding {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    /* ===== LayerScorecard ===== */
+    .layer-scorecard {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    /* ===== QueryResults ===== */
+    .query-results-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .query-card__question {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-style: italic;
+      margin: 6px 0 10px;
+      line-height: 1.5;
+    }
+    .query-card__grades {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 10px 0;
+    }
+    .grade-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .grade-pill--ok { color: var(--accent-green); border-color: rgba(63,185,80,0.4); }
+    .grade-pill--miss { color: var(--accent-red); border-color: rgba(248,81,73,0.4); }
+    .grade-pill--partial { color: var(--accent-yellow); border-color: rgba(210,153,34,0.4); }
+
+    /* ===== ChunkingFixStory ===== */
+    .chunking-fix-story {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 720px) {
+      .chunking-fix-story { grid-template-columns: 1fr; }
+    }
+    .chunking-fix-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+    }
+    .chunking-fix-panel h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+    .chunking-fix-panel--before { border-left: 3px solid var(--accent-red); }
+    .chunking-fix-panel--after { border-left: 3px solid var(--accent-green); }
+    .chunking-fix-panel__signal {
+      font-size: 13px;
+      margin: 8px 0;
+      color: var(--text-secondary);
+    }
+    .chunking-fix-panel__signal strong {
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .chunking-fix-panel__quote {
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: 10px 0 0;
+      line-height: 1.45;
+    }
+    .punchline {
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: rgba(88, 166, 255, 0.08);
+      border-left: 3px solid var(--accent-blue);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    .punchline strong { color: var(--text-primary); }
+
+    /* ===== LatencyDecomposition ===== */
+    .latency-section .latency-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .latency-row {
+      display: grid;
+      grid-template-columns: 180px 1fr 90px;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
+    @media (max-width: 720px) {
+      .latency-row { grid-template-columns: 130px 1fr 70px; gap: 8px; }
+    }
+    .latency-row__label { color: var(--text-secondary); }
+    .latency-row__bar {
+      height: 24px;
+      background: var(--bg-inset);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+    }
+    .latency-row__fill {
+      height: 100%;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      padding-left: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: rgba(0,0,0,0.85);
+    }
+    .latency-row--l1 .latency-row__fill { background: var(--layer-1); }
+    .latency-row--l2 .latency-row__fill { background: var(--layer-2); color: rgba(255,255,255,0.95); }
+    .latency-row--l3 .latency-row__fill { background: var(--layer-3); }
+    .latency-row__value {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .latency-section__note {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 16px;
+      line-height: 1.5;
+    }
+
+    /* ===== Diagram cards (PipelineDiagram, TriageFlowchart, latency) ===== */
+    .diagram-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      overflow-x: auto;
+    }
+    .diagram-card .mermaid { display: flex; justify-content: center; }
+    .legend {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .legend__item { display: inline-flex; align-items: center; gap: 6px; }
+    .legend__dot { width: 10px; height: 10px; border-radius: 2px; }
+
+    /* ===== DashboardFooter ===== */
+    .dashboard-footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .dashboard-footer a { color: var(--accent-blue); text-decoration: none; }
+    .dashboard-footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app"></div>
+
+  <script>
+    /**
+     * DASHBOARD_DATA — the entire content of this dashboard.
+     *
+     * When porting to LLM-Model-Dashboard:
+     *   - Lift this object verbatim into a typed module.
+     *   - Replace each render*() function below with the matching React component.
+     *   - Keep the same shape; React components consume these objects as props.
+     */
+    const DASHBOARD_DATA = {
+      meta: {
+        title: "RAG Validation Dashboard",
+        subtitle: 'Live results from validating the AnythingLLM workspace <code>continuous-delivery-guidelines-rule-book-for-development</code> across REST, MCP, Telegram-end-to-end, and data hygiene.',
+        validationWindow: "2026-05-04 → 2026-05-06",
+        workspaceLabel: "Workspace #10 · 5,741 words · llama3.2:3b · topN=8",
+        repoUrl: "https://github.com/kickingzebra/rag-validation-runbook",
+        runbookUrl: "https://github.com/kickingzebra/rag-validation-runbook#readme",
+        lastValidated: "2026-05-06"
+      },
+
+      layerStatuses: [
+        { id: "L1",  label: "REST direct",            status: "pass" },
+        { id: "L2",  label: "MCP standalone",         status: "pass" },
+        { id: "L3",  label: "Telegram end-to-end",    status: "pass" },
+        { id: "L4a", label: "Workspace isolation",    status: "pass" },
+        { id: "L4b", label: "Persistence after restart", status: "pass" }
+      ],
+
+      pipelineDiagram: `flowchart TB
+    USER([User])
+    TG[Telegram bot<br/>Noor_2_bot]
+    OC[OpenClaw<br/>orchestrator]
+    OL[Ollama<br/>qwen3.5:27b]
+    MCP[anythingllm-mcp<br/>stdio JSON-RPC]
+    AL[AnythingLLM<br/>REST API]
+    EMB[Embedding model<br/>Xenova/all-MiniLM-L6-v2]
+    LDB[(LanceDB<br/>per-workspace partitions)]
+
+    USER -->|message| TG
+    TG -->|webhook| OC
+    OC <-->|prompt + tool calls| OL
+    OC -->|spawn subprocess<br/>+ JSON-RPC| MCP
+    MCP <-->|HTTP| AL
+    AL --> EMB
+    AL <-->|similarity search| LDB
+
+    classDef l1 fill:#facc15,stroke:#a16207,color:#000
+    classDef l2 fill:#60a5fa,stroke:#1e40af,color:#000
+    classDef l3 fill:#4ade80,stroke:#166534,color:#000
+    classDef l4 fill:#f472b6,stroke:#9d174d,color:#000
+
+    class AL,EMB l1
+    class MCP l2
+    class USER,TG,OC,OL l3
+    class LDB l4`,
+
+      layerScorecard: [
+        {
+          id: "L1",
+          tone: "l1",
+          title: "Layer 1 — REST direct",
+          verdict: "pass",
+          metrics: [
+            { label: "Probe latency", value: "~3 s" },
+            { label: "Endpoint", value: "/api/v1/.../chat" }
+          ],
+          finding: "Embedding, vector retrieval, and chat-model generation all reachable. <code>topN=4</code> missed two query chunks; bumping to <code>topN=8</code> surfaced one; restructuring rule 17 surfaced the other. Independent failure modes confirmed for retrieval, chunking, and generation grounding."
+        },
+        {
+          id: "L2",
+          tone: "l2",
+          title: "Layer 2 — MCP standalone",
+          verdict: "pass",
+          metrics: [
+            { label: "End-to-end", value: "15.7 s" },
+            { label: "Spawn cost", value: "~3–5 s" }
+          ],
+          finding: "JSON-RPC stdio harness works as documented. Tool name is bare <code>rag_query</code> at the MCP layer; OpenClaw prepends the server name to produce <code>anythingllm__rag_query</code> for the model. Required args: <code>workspace</code> + <code>question</code>. Sources returned filename-only, not chunk-level."
+        },
+        {
+          id: "L3",
+          tone: "l3",
+          title: "Layer 3 — Telegram end-to-end",
+          verdict: "pass",
+          metrics: [
+            { label: "Round-trip", value: "~6 min" },
+            { label: "Model", value: "qwen3.5:27b" }
+          ],
+          finding: "Verbatim-correct paraphrase of rule 5 returned through the full chain. Round-trip latency dominated by the model's tool-calling and final-generation cycle on iGPU, not the RAG plumbing. Workspace context bled into the next turn — useful for continuity, worth knowing for fresh-context queries."
+        },
+        {
+          id: "L4",
+          tone: "l4",
+          title: "Layer 4 — Data hygiene",
+          verdict: "pass",
+          metrics: [
+            { label: "Isolation", value: "sources empty" },
+            { label: "Restart recovery", value: "< 30 s" }
+          ],
+          finding: "Cross-workspace probes returned <code>sources: []</code> — LanceDB partitioning enforces. <code>docker restart anythingllm</code> preserved every workspace setting, the document <code>docId</code>, embedding timestamp, and vector queryability. <code>queryRefusalResponse</code> confirmed advisory rather than enforced."
+        }
+      ],
+
+      queries: [
+        {
+          id: "Q1",
+          title: "Q1 — Direct lookup",
+          verdict: "partial",
+          question: '"What is the TDD rule and why does it apply?"',
+          grades: [
+            { label: "retrieval@4 miss", tone: "miss" },
+            { label: "retrieval@8 hit", tone: "ok" },
+            { label: "generation drift", tone: "miss" }
+          ],
+          finding: "Rule body wasn't in top-4; surfaced at position 5 with topN=8. Even with the right chunk in context, llama3.2:3b produced generic TDD bookwisdom — generation grounding failure, not retrieval."
+        },
+        {
+          id: "Q2",
+          title: "Q2 — Carve-out lookup",
+          verdict: "pass",
+          question: '"When am I allowed to use scp to deploy to GEEKOM?"',
+          grades: [
+            { label: "retrieval ok", tone: "ok" },
+            { label: "generation faithful", tone: "ok" }
+          ],
+          finding: 'Verbatim paraphrase of rule 5: "throwaway smoke tests, replaced by a PR once the approach is proven." Stable across topN=4, topN=8, post-restart, and post-doc-refresh.'
+        },
+        {
+          id: "Q3",
+          title: "Q3 — Cross-rule synthesis",
+          verdict: "fail",
+          question: '"I have a private repo without GitHub Pro. Which TBD bits still apply and which don\'t?"',
+          grades: [
+            { label: "retrieval ok", tone: "ok" },
+            { label: "generation fabrication", tone: "miss" }
+          ],
+          finding: "Rule 19's \"How to apply\" was retrieved correctly. Model invented a categorisation: claimed several rules require GitHub Pro. Doc says no such thing — only branch protection is paywalled. Cross-rule synthesis failure on the 3B model."
+        },
+        {
+          id: "Q4",
+          title: "Q4 — Disambiguation",
+          verdict: "pass",
+          question: '"What\'s the difference between \'build once, promote by digest\' and \'smoke test gates every deploy\'?"',
+          grades: [
+            { label: "retrieval ok", tone: "ok" },
+            { label: "generation faithful", tone: "ok" }
+          ],
+          finding: "Rule 14 (smoke tests) was top source. Rule 12 (build-once) wasn't visibly in top-4 but the model still differentiated both correctly — possibly leaning on training-data priors for a Humble &amp; Farley term."
+        },
+        {
+          id: "Q5",
+          title: "Q5 — Out-of-corpus / negative",
+          verdict: "partial",
+          question: '"What is our policy on AGPL dependencies?"',
+          grades: [
+            { label: "retrieval pre-fix", tone: "miss" },
+            { label: "retrieval post-fix", tone: "ok" },
+            { label: "generation drift", tone: "miss" }
+          ],
+          finding: "The most informative query of the run. Source AGPL bullet was buried inside a 5-item list — never retrieved at any topN. After restructuring rule 17 to give \"Forbidden licence families\" its own paragraph, the new chunk ranks #1 at score 0.439. Model still produced byte-identical fabrication, including cross-rule contamination from rule 16."
+        }
+      ],
+
+      chunkingFix: {
+        before: {
+          date: "Before — 2026-05-04",
+          signals: [
+            "Rule 17 had the AGPL prohibition buried inside a 5-item numbered list of \"Required artifacts,\" dominated by license-file / manifest / OCI-label tokens.",
+            "<strong>Retrieval:</strong> chunk containing \"AGPL\" never surfaced at <code>topN=4</code> or <code>topN=8</code>.",
+            "<strong>Generation:</strong> \"Our policy for AGPL is to avoid them whenever possible...\" — softened \"forbidden\" to \"avoid\"; mixed in unrelated rule-16 content."
+          ],
+          quote: "Sources at topN=8: rule 17 \"Why\" paragraph (score 0.372), rule 16 (loose coupling, 0.380), rule 11 (packaging, 0.366) — none containing the buried AGPL bullet."
+        },
+        after: {
+          date: "After — 2026-05-06",
+          signals: [
+            "Rule 17 restructured: AGPL/GPL/LGPL/SSPL pulled out into a new paragraph anchored as <code>**Forbidden licence families.**</code> (matching the rule's existing bold-anchor convention). Table-row summary updated to spell out family names.",
+            "<strong>Retrieval:</strong> new \"Forbidden licence families\" paragraph ranked <strong>#1</strong> source at score <strong>0.439</strong>.",
+            "<strong>Generation:</strong> answer is byte-identical to the pre-fix run. Same softened \"avoid\" phrasing, same cross-rule contamination."
+          ],
+          quote: "Top source: \"**Forbidden licence families.** GPL, AGPL, LGPL, SSPL, and any other copyleft licence are forbidden anywhere in the dependency tree of any repo Zia owns. Permissive licences (MIT, Apache 2.0, BSD, ISC, MPL 2.0) are fine.\""
+        },
+        punchline: "<strong>What this proves:</strong> chunking failure and generation-grounding failure are independent. Restructuring the source fixed retrieval exactly as the runbook predicted — the new chunk now ranks first. But the model continues to fabricate even with the correct chunk in its context window. The next experiment — re-running on qwen3.5:27b or with <code>chatMode: query</code> — would test whether the generation-grounding failure responds to a stronger model or a stricter system prompt. Each failure mode has its own remedy; conflating them wastes effort."
+      },
+
+      latency: {
+        rows: [
+          { id: "l1", label: "Layer 1 (REST direct)",       seconds: 3,   barWidth: "0.83%",  display: "3 s",     value: "~ 3 s" },
+          { id: "l2", label: "Layer 2 (MCP standalone)",    seconds: 16,  barWidth: "4.36%",  display: "15.7 s",  value: "~ 16 s" },
+          { id: "l3", label: "Layer 3 (Telegram end-to-end)", seconds: 360, barWidth: "100%",   display: "~ 360 s", value: "~ 6 min" }
+        ],
+        note: "Subtraction: Layer 3 ≈ Layer 2 (16 s) + chat-model overhead (~5 min 44 s of tool-call decision plus final-answer generation on qwen3.5:27b on iGPU). The MCP wrapping adds ~5–10 s of Python-startup overhead on top of Layer 1 because OpenClaw spawns the server fresh per tool call. Optimising user-facing latency means optimising the model side, not the RAG plumbing."
+      },
+
+      triageDiagram: `flowchart TD
+    S[Query returned wrong<br/>or fabricated answer]
+    S --> A{Is the relevant chunk<br/>in sources?}
+    A -->|Yes| C{Compare textResponse<br/>to that chunk}
+    A -->|No, sources non-empty| B{Bump topN<br/>and re-run}
+    B -->|Right chunk now appears| RB[RETRIEVAL FAILURE<br/>at original topN<br/>raise topN or threshold]
+    B -->|Still missing at any topN| BB{Inspect chunking}
+    BB -->|Fact buried inside larger chunk| CHK[CHUNKING FAILURE<br/>restructure source<br/>or shrink chunk size]
+    C -->|Faithful paraphrase| OK[No failure]
+    C -->|Ignores chunk; generic answer| GEN[GENERATION GROUNDING FAILURE<br/>stronger model<br/>or stricter prompt]
+    C -->|Mixes chunk with invented specifics| GEN
+
+    S --> D{sources empty<br/>but model answered?}
+    D -->|Yes| REF[REFUSAL-PATH FAILURE<br/>queryRefusalResponse is advisory<br/>not enforced]
+
+    S --> E{sources contains chunks<br/>from another workspace?}
+    E -->|Yes| LEAK[CROSS-WORKSPACE LEAK<br/>platform bug; escalate]`
+    };
+
+    /* ====================================================================
+       Render helpers — each function corresponds to one future React component.
+       Each takes the section's slice of DASHBOARD_DATA and returns an HTML
+       string. The mount step at the bottom joins them and writes to #app.
+       ==================================================================== */
+
+    function renderHeader(meta) {
+      return `
+        <header class="dashboard-header">
+          <h1>${meta.title}</h1>
+          <p class="dashboard-header__subtitle">${meta.subtitle}</p>
+          <div class="dashboard-header__meta">
+            <span>Validation window: <strong style="color:var(--text-secondary)">${meta.validationWindow}</strong></span>
+            <span>${meta.workspaceLabel}</span>
+            <span><a href="${meta.repoUrl}">repo</a></span>
+            <span><a href="${meta.runbookUrl}">runbook</a></span>
+          </div>
+        </header>
+      `;
+    }
+
+    function renderLayerStatusStrip(layers) {
+      const chips = layers.map(l => `
+        <span class="status-chip status-chip--${l.status === 'pass' ? '' : l.status}">
+          <span class="status-chip__dot"></span>${l.id} ${l.label} ${l.status === 'pass' ? '✓' : '✗'}
+        </span>
+      `).join('');
+      return `
+        <section id="status">
+          <h2>Layer status</h2>
+          <p class="section-lede">All four validation layers are currently green. Each chip is one independent test.</p>
+          <div class="layer-status-strip">${chips}</div>
+        </section>
+      `;
+    }
+
+    function renderPipelineDiagram(source) {
+      return `
+        <section id="pipeline">
+          <h2>Pipeline architecture</h2>
+          <p class="section-lede">Components colour-coded by which validation layer probes that boundary.</p>
+          <div class="diagram-card">
+            <div class="mermaid">${source}</div>
+            <div class="legend">
+              <span class="legend__item"><span class="legend__dot" style="background:var(--layer-1)"></span>Layer 1 — REST direct</span>
+              <span class="legend__item"><span class="legend__dot" style="background:var(--layer-2)"></span>Layer 2 — MCP standalone</span>
+              <span class="legend__item"><span class="legend__dot" style="background:var(--layer-3)"></span>Layer 3 — End-to-end via assistant</span>
+              <span class="legend__item"><span class="legend__dot" style="background:var(--layer-4)"></span>Layer 4 — Data hygiene</span>
+            </div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderLayerCard(layer) {
+      const metrics = layer.metrics.map(m =>
+        `<span class="card__metrics-item">${m.label}: <strong>${m.value}</strong></span>`
+      ).join('');
+      return `
+        <div class="card">
+          <div class="card__head">
+            <h3 class="card__title"><span class="card__title-tag card__title-tag--${layer.tone}"></span>${layer.title}</h3>
+            <span class="verdict verdict--${layer.verdict}">${layer.verdict}</span>
+          </div>
+          <div class="card__metrics">${metrics}</div>
+          <p class="card__finding">${layer.finding}</p>
+        </div>
+      `;
+    }
+
+    function renderLayerScorecard(layers) {
+      return `
+        <section id="layer-scorecard">
+          <h2>Layer scorecard</h2>
+          <p class="section-lede">One card per layer, with the verdict, end-to-end latency for a representative probe, and the most consequential finding.</p>
+          <div class="layer-scorecard">${layers.map(renderLayerCard).join('')}</div>
+        </section>
+      `;
+    }
+
+    function renderQueryCard(q) {
+      const grades = q.grades.map(g =>
+        `<span class="grade-pill grade-pill--${g.tone}">${g.label}</span>`
+      ).join('');
+      return `
+        <div class="card query-card">
+          <div class="card__head">
+            <h3 class="card__title">${q.title}</h3>
+            <span class="verdict verdict--${q.verdict}">${q.verdict}</span>
+          </div>
+          <p class="query-card__question">${q.question}</p>
+          <div class="query-card__grades">${grades}</div>
+          <p class="card__finding">${q.finding}</p>
+        </div>
+      `;
+    }
+
+    function renderQueryResults(queries) {
+      return `
+        <section id="query-results">
+          <h2>Five-query validation results</h2>
+          <p class="section-lede">The validation template, scored against the source document. Three signals per query: retrieval (did the right chunk surface?), generation (did the model use it?), refusal (when retrieval was empty, did the refusal path fire?).</p>
+          <div class="query-results-grid">${queries.map(renderQueryCard).join('')}</div>
+        </section>
+      `;
+    }
+
+    function renderChunkingFixPanel(panel, variant) {
+      const signals = panel.signals.map(s =>
+        `<p class="chunking-fix-panel__signal">${s}</p>`
+      ).join('');
+      return `
+        <div class="chunking-fix-panel chunking-fix-panel--${variant}">
+          <h3>${panel.date}</h3>
+          ${signals}
+          <p class="chunking-fix-panel__quote">${panel.quote}</p>
+        </div>
+      `;
+    }
+
+    function renderChunkingFixStory(data) {
+      return `
+        <section id="chunking-fix">
+          <h2>The chunking-fix story</h2>
+          <p class="section-lede">Q5 in detail — the cleanest demonstration of failure-mode separation in the entire validation arc.</p>
+          <div class="chunking-fix-story">
+            ${renderChunkingFixPanel(data.before, 'before')}
+            ${renderChunkingFixPanel(data.after, 'after')}
+          </div>
+          <div class="punchline">${data.punchline}</div>
+        </section>
+      `;
+    }
+
+    function renderLatencyDecomposition(data) {
+      const rows = data.rows.map(r => `
+        <div class="latency-row latency-row--${r.id}">
+          <div class="latency-row__label">${r.label}</div>
+          <div class="latency-row__bar"><div class="latency-row__fill" style="width:${r.barWidth}">${r.display}</div></div>
+          <div class="latency-row__value">${r.value}</div>
+        </div>
+      `).join('');
+      return `
+        <section id="latency" class="latency-section">
+          <h2>Latency decomposition</h2>
+          <p class="section-lede">Where the time goes for one validation query, observed end-to-end. The Telegram round-trip dominates because of the chat model's tool-calling and final-answer generation, not because of the RAG plumbing.</p>
+          <div class="diagram-card" style="padding-bottom:24px">
+            <div class="latency-rows">${rows}</div>
+            <p class="latency-section__note">${data.note}</p>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderTriageFlowchart(source) {
+      return `
+        <section id="triage" class="triage-section">
+          <h2>Failure-mode triage</h2>
+          <p class="section-lede">Decision tree for localising which stage failed when a query returns a wrong answer. Mirrors <code>docs/04-failure-mode-triage.md</code>.</p>
+          <div class="diagram-card">
+            <div class="mermaid">${source}</div>
+          </div>
+        </section>
+      `;
+    }
+
+    function renderFooter(meta) {
+      return `
+        <footer class="dashboard-footer">
+          <span>Last validated: ${meta.lastValidated} · ${meta.workspaceLabel}</span>
+          <span>
+            <a href="${meta.repoUrl}">Source on GitHub</a>
+            · All Rights Reserved
+          </span>
+        </footer>
+      `;
+    }
+
+    /* ===== Mount ===== */
+    document.getElementById('app').innerHTML = [
+      renderHeader(DASHBOARD_DATA.meta),
+      renderLayerStatusStrip(DASHBOARD_DATA.layerStatuses),
+      renderPipelineDiagram(DASHBOARD_DATA.pipelineDiagram),
+      renderLayerScorecard(DASHBOARD_DATA.layerScorecard),
+      renderQueryResults(DASHBOARD_DATA.queries),
+      renderChunkingFixStory(DASHBOARD_DATA.chunkingFix),
+      renderLatencyDecomposition(DASHBOARD_DATA.latency),
+      renderTriageFlowchart(DASHBOARD_DATA.triageDiagram),
+      renderFooter(DASHBOARD_DATA.meta)
+    ].join('');
+
+    /* ===== Mermaid initialisation (after DOM mounted) ===== */
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      themeVariables: {
+        background: '#0a0e14',
+        primaryColor: '#161b22',
+        primaryBorderColor: '#30363d',
+        primaryTextColor: '#e6edf3',
+        lineColor: '#8b949e',
+        secondaryColor: '#1c2128',
+        tertiaryColor: '#21262d'
+      },
+      flowchart: { curve: 'basis', padding: 20 },
+      securityLevel: 'strict'
+    });
+    mermaid.run();
+  </script>
+</body>
+</html>

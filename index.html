@@ -13,6 +13,7 @@
       .dashboard-header     → <DashboardHeader meta />
       .layer-status-strip   → <LayerStatusStrip layers />
       .pipeline-diagram     → <PipelineDiagram source />
+      .pipeline-flow        → <LivePipelineFlow data />     (animated replay)
       .layer-scorecard      → <LayerScorecard layers />
       .layer-card           → <LayerCard {...layer} />
       .query-results-grid   → <QueryResults queries />
@@ -400,6 +401,133 @@
     .legend__item { display: inline-flex; align-items: center; gap: 6px; }
     .legend__dot { width: 10px; height: 10px; border-radius: 2px; }
 
+    /* ===== LivePipelineFlow (animated replay) ===== */
+    .pipeline-flow {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+    .pipeline-flow__controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .pipeline-flow__btn {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-inset);
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .pipeline-flow__btn:hover {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+    .pipeline-flow__btn.is-active {
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      background: rgba(88, 166, 255, 0.10);
+    }
+    .pipeline-flow__btn--replay {
+      margin-left: auto;
+    }
+    .pipeline-flow__steps {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 4px 0;
+      justify-content: center;
+      margin-bottom: 4px;
+    }
+    .pipeline-flow__step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-width: 100px;
+      max-width: 130px;
+      min-height: 60px;
+      padding: 10px 8px;
+      background: var(--bg-inset);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      transition: background 0.35s ease, border-color 0.35s ease, color 0.35s ease;
+    }
+    .pipeline-flow__step.is-running {
+      background: rgba(88, 166, 255, 0.15);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      animation: pipeline-pulse 1.2s ease-in-out infinite;
+    }
+    .pipeline-flow__step.is-done {
+      background: rgba(63, 185, 80, 0.15);
+      border-color: var(--accent-green);
+      color: var(--accent-green);
+    }
+    .pipeline-flow__step.is-failed {
+      background: rgba(248, 81, 73, 0.18);
+      border-color: var(--accent-red);
+      color: var(--accent-red);
+      animation: pipeline-shake 0.5s ease;
+    }
+    @keyframes pipeline-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.45); }
+      50%      { box-shadow: 0 0 0 6px rgba(88, 166, 255, 0); }
+    }
+    @keyframes pipeline-shake {
+      0%, 100% { transform: translateX(0); }
+      25%      { transform: translateX(-3px); }
+      75%      { transform: translateX(3px); }
+    }
+    .pipeline-flow__step-label {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 2px;
+      color: inherit;
+    }
+    .pipeline-flow__step-sublabel {
+      font-size: 11px;
+      opacity: 0.85;
+      color: inherit;
+    }
+    .pipeline-flow__arrow {
+      width: 18px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .pipeline-flow__verdict {
+      margin-top: 18px;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      border-left: 3px solid var(--text-muted);
+      background: var(--bg-inset);
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      transition: border-left-color 0.25s ease;
+    }
+    .pipeline-flow__verdict.is-ok { border-left-color: var(--accent-green); }
+    .pipeline-flow__verdict.is-miss { border-left-color: var(--accent-red); }
+    @media (max-width: 720px) {
+      .pipeline-flow__step { min-width: 80px; padding: 8px 6px; }
+      .pipeline-flow__arrow { width: 12px; }
+      .pipeline-flow__step-label { font-size: 12px; }
+      .pipeline-flow__step-sublabel { font-size: 10px; }
+    }
+
     /* ===== DashboardFooter ===== */
     .dashboard-footer {
       margin-top: 64px;
@@ -474,6 +602,91 @@
     class MCP l2
     class USER,TG,OC,OL l3
     class LDB l4`,
+
+      pipelineFlow: {
+        title: "Pipeline flow — last run replay",
+        description: "A single query traversing the pipeline. Pick a scenario; boxes go white → blue (running) → green (done) → red (failed). All timings are scaled replays of observed runs, not live probes.",
+        steps: [
+          { id: "user",        label: "User",            sublabel: "sends query" },
+          { id: "telegram",    label: "Telegram",        sublabel: "Noor_2_bot" },
+          { id: "openclaw",    label: "OpenClaw",        sublabel: "route + spawn" },
+          { id: "ollama",      label: "Ollama",          sublabel: "qwen3.5:27b" },
+          { id: "mcp",         label: "anythingllm-mcp", sublabel: "JSON-RPC stdio" },
+          { id: "anythingllm", label: "AnythingLLM",     sublabel: "REST + chat" },
+          { id: "embedding",   label: "Embedding",       sublabel: "MiniLM" },
+          { id: "lancedb",     label: "LanceDB",         sublabel: "vector search" }
+        ],
+        scenarios: {
+          success: {
+            label: "Successful run",
+            verdict: "All eight stages completed. The Layer 5 carve-out (\"scp allowed for throwaway smoke tests\") was retrieved correctly and answered verbatim through the full chain.",
+            verdictTone: "ok",
+            timeline: [
+              [   0, "user",        "running"],
+              [ 100, "user",        "done"   ],
+              [ 200, "telegram",    "running"],
+              [ 500, "telegram",    "done"   ],
+              [ 600, "openclaw",    "running"],
+              [ 900, "openclaw",    "done"   ],
+              [1000, "ollama",      "running"],
+              [2400, "ollama",      "done"   ],
+              [2500, "mcp",         "running"],
+              [3500, "mcp",         "done"   ],
+              [3600, "anythingllm", "running"],
+              [3800, "embedding",   "running"],
+              [4100, "embedding",   "done"   ],
+              [4200, "lancedb",     "running"],
+              [4700, "lancedb",     "done"   ],
+              [5500, "anythingllm", "done"   ]
+            ]
+          },
+          q5RetrievalMiss: {
+            label: "Q5 — retrieval miss (pre-fix)",
+            verdict: "Chunking failure. The AGPL bullet was buried inside rule 17's \"Required artifacts\" list, so no chunk centred on copyleft-licence content existed. LanceDB returned only weakly-related rule chunks; no relevant retrieval at any topN. Resolved by restructuring rule 17 to give \"Forbidden licence families\" its own paragraph.",
+            verdictTone: "miss",
+            timeline: [
+              [   0, "user",        "running"],
+              [ 100, "user",        "done"   ],
+              [ 200, "telegram",    "running"],
+              [ 500, "telegram",    "done"   ],
+              [ 600, "openclaw",    "running"],
+              [ 900, "openclaw",    "done"   ],
+              [1000, "ollama",      "running"],
+              [2400, "ollama",      "done"   ],
+              [2500, "mcp",         "running"],
+              [3500, "mcp",         "done"   ],
+              [3600, "anythingllm", "running"],
+              [3800, "embedding",   "running"],
+              [4100, "embedding",   "done"   ],
+              [4200, "lancedb",     "running"],
+              [4900, "lancedb",     "failed" ]
+            ]
+          },
+          q5GenerationDrift: {
+            label: "Q5 — generation drift (post-fix)",
+            verdict: "Retrieval succeeded after the chunking fix — the new \"Forbidden licence families\" chunk ranked #1 at score 0.439. But the chat model ignored the grounded context and produced byte-identical fabrication, including cross-rule contamination from rule 16. Independent failure mode; remedy is a stronger model or stricter system prompt, not retrieval tuning.",
+            verdictTone: "miss",
+            timeline: [
+              [   0, "user",        "running"],
+              [ 100, "user",        "done"   ],
+              [ 200, "telegram",    "running"],
+              [ 500, "telegram",    "done"   ],
+              [ 600, "openclaw",    "running"],
+              [ 900, "openclaw",    "done"   ],
+              [1000, "ollama",      "running"],
+              [2400, "ollama",      "done"   ],
+              [2500, "mcp",         "running"],
+              [3500, "mcp",         "done"   ],
+              [3600, "anythingllm", "running"],
+              [3800, "embedding",   "running"],
+              [4100, "embedding",   "done"   ],
+              [4200, "lancedb",     "running"],
+              [4700, "lancedb",     "done"   ],
+              [5500, "anythingllm", "failed" ]
+            ]
+          }
+        }
+      },
 
       layerScorecard: [
         {
@@ -686,6 +899,101 @@
       `;
     }
 
+    function renderPipelineFlow(data) {
+      const stepsHtml = data.steps.map((s, i) => `
+        <div class="pipeline-flow__step" data-step="${s.id}">
+          <div class="pipeline-flow__step-label">${s.label}</div>
+          <div class="pipeline-flow__step-sublabel">${s.sublabel}</div>
+        </div>
+        ${i < data.steps.length - 1 ? '<div class="pipeline-flow__arrow">→</div>' : ''}
+      `).join('');
+
+      const scenarioBtns = Object.entries(data.scenarios).map(([id, sc]) =>
+        `<button type="button" class="pipeline-flow__btn" data-scenario="${id}">${sc.label}</button>`
+      ).join('');
+
+      return `
+        <section id="pipeline-flow">
+          <h2>${data.title}</h2>
+          <p class="section-lede">${data.description}</p>
+          <div class="pipeline-flow">
+            <div class="pipeline-flow__controls">
+              ${scenarioBtns}
+              <button type="button" class="pipeline-flow__btn pipeline-flow__btn--replay" data-action="replay" title="Replay current scenario">⟳ Replay</button>
+            </div>
+            <div class="pipeline-flow__steps">${stepsHtml}</div>
+            <div class="pipeline-flow__verdict" data-role="verdict">Click a scenario above to replay it. Boxes animate white → blue (running) → green (done) → red (failed).</div>
+          </div>
+        </section>
+      `;
+    }
+
+    /* Pipeline-flow animation runtime — also ports cleanly to a React
+       useEffect / useReducer pair when the component is lifted into
+       LLM-Model-Dashboard. State machine: pending → running → done|failed. */
+    let pipelineFlowState = { activeScenario: null, timers: [] };
+
+    function clearPipelineAnimation() {
+      pipelineFlowState.timers.forEach(t => clearTimeout(t));
+      pipelineFlowState.timers = [];
+      document.querySelectorAll('.pipeline-flow__step').forEach(el => {
+        el.classList.remove('is-running', 'is-done', 'is-failed');
+      });
+      const verdict = document.querySelector('.pipeline-flow__verdict');
+      if (verdict) {
+        verdict.textContent = 'Replaying…';
+        verdict.classList.remove('is-ok', 'is-miss');
+      }
+    }
+
+    function runPipelineScenario(scenarioId) {
+      const scenario = DASHBOARD_DATA.pipelineFlow.scenarios[scenarioId];
+      if (!scenario) return;
+      clearPipelineAnimation();
+      pipelineFlowState.activeScenario = scenarioId;
+
+      document.querySelectorAll('.pipeline-flow__btn[data-scenario]').forEach(b => {
+        b.classList.toggle('is-active', b.dataset.scenario === scenarioId);
+      });
+
+      scenario.timeline.forEach(([offset, stepId, state]) => {
+        const t = setTimeout(() => {
+          const el = document.querySelector(`.pipeline-flow__step[data-step="${stepId}"]`);
+          if (!el) return;
+          el.classList.remove('is-running', 'is-done', 'is-failed');
+          el.classList.add(`is-${state}`);
+        }, offset);
+        pipelineFlowState.timers.push(t);
+      });
+
+      const lastOffset = scenario.timeline.reduce((m, t) => Math.max(m, t[0]), 0);
+      const verdictTimer = setTimeout(() => {
+        const verdict = document.querySelector('.pipeline-flow__verdict');
+        if (!verdict) return;
+        verdict.textContent = scenario.verdict;
+        verdict.classList.remove('is-ok', 'is-miss');
+        verdict.classList.add(`is-${scenario.verdictTone}`);
+      }, lastOffset + 250);
+      pipelineFlowState.timers.push(verdictTimer);
+    }
+
+    function initPipelineFlow() {
+      const root = document.getElementById('pipeline-flow');
+      if (!root) return;
+      root.addEventListener('click', (e) => {
+        const target = e.target.closest('[data-scenario], [data-action="replay"]');
+        if (!target) return;
+        if (target.dataset.scenario) {
+          runPipelineScenario(target.dataset.scenario);
+        } else if (target.dataset.action === 'replay' && pipelineFlowState.activeScenario) {
+          runPipelineScenario(pipelineFlowState.activeScenario);
+        }
+      });
+      // Auto-play the success scenario shortly after mount so visitors
+      // see what the dashboard does without needing to click anything.
+      setTimeout(() => runPipelineScenario('success'), 600);
+    }
+
     function renderLayerCard(layer) {
       const metrics = layer.metrics.map(m =>
         `<span class="card__metrics-item">${m.label}: <strong>${m.value}</strong></span>`
@@ -815,6 +1123,7 @@
       renderHeader(DASHBOARD_DATA.meta),
       renderLayerStatusStrip(DASHBOARD_DATA.layerStatuses),
       renderPipelineDiagram(DASHBOARD_DATA.pipelineDiagram),
+      renderPipelineFlow(DASHBOARD_DATA.pipelineFlow),
       renderLayerScorecard(DASHBOARD_DATA.layerScorecard),
       renderQueryResults(DASHBOARD_DATA.queries),
       renderChunkingFixStory(DASHBOARD_DATA.chunkingFix),
@@ -840,6 +1149,9 @@
       securityLevel: 'strict'
     });
     mermaid.run();
+
+    /* ===== LivePipelineFlow init (auto-plays the success scenario) ===== */
+    initPipelineFlow();
   </script>
 </body>
 </html>
